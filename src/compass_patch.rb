@@ -1,3 +1,4 @@
+require "listen"
 module Compass
   
   # for add fireapp_build_path configuration property
@@ -35,6 +36,38 @@ module Compass
 
         puts ">>> Compass is #{action} for changes. Press Ctrl-C to Stop."
 
+        listen_args=[]
+        Compass.configuration.sass_load_paths.each do |load_path|
+          load_path = load_path.root if load_path.respond_to?(:root)
+          next unless load_path.is_a? String
+          listen_args << load_path
+        end
+        listen_args << Compass.configuration.project_path
+        listen_args << {:latency => 0.1}
+        Listen.to( *listen_args ) do |modified, added, removed|
+          all = modified + added + removed
+          return if all.empty?
+          puts "runing"
+          puts ">>> Change detected to: #{modified.join(', ')}" unless modified.empty?
+          puts ">>> New file detected: #{added.join(', ')}" unless added.empty?
+          puts ">>> File Removed: #{removed.join(', ')}" unless removed.empty?
+          if all.any?{|x| x =~ /\.s[ac]ss$/}
+            remove_obsolete_css unless removed.empty? 
+            recompile
+          end
+          if all.any?{|x| x =~ /\.coffee$/}
+            puts Time.now.to_f
+            CoffeeCompiler.compile_folder( Compass.configuration.fireapp_coffeescripts_dir, Compass.configuration.javascripts_dir );
+          end
+
+          Compass.configuration.watches.each do |glob, callback|
+            filtered = all.find_all{|x| File.fnmatch(glob, x)}
+            filtered.each do |x|
+              callback.call(Compass.configuration.project_path, x.sub( Compass.configuration.project_path+"/", ''))
+            end
+          end
+        end
+=begin
         begin
           FSSM.monitor do |monitor|
             Compass.configuration.sass_load_paths.each do |load_path|
@@ -92,7 +125,7 @@ module Compass
             exit
           end
         end
-
+=end
       end
     end
 
